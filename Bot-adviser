@@ -1,0 +1,123 @@
+using QuikSharp;
+using System;
+using QuikSharp.DataStructures;
+using System.IO;
+
+namespace QuickShartTest
+{
+    public class Program
+    {
+        public static void Main(string[] args)
+        {
+            // Инициализируем объект Quik с использованием локального расположения терминала
+            var quik = new Quik(Quik.DefaultPort, new InMemoryStorage());
+
+            if (quik == null)   // Проверяем, что Quik запущен и скрипт на Lua подключен
+            {
+                Console.WriteLine("Ошибка! Не удалось подключиться к Quik. Проблема в Lua-скрипте или самом Quik.");
+                return;
+            }
+
+            Console.WriteLine("Успешно подключились к Quik");
+
+            // Проверяем статус соединения с сервером в Quik
+            var isServerConnected = quik.Service.IsConnected().Result;
+
+            if (!isServerConnected)
+            {
+                Console.WriteLine("Ошибка! Quik не подключен к серверу!");
+                return;
+            }
+
+            Console.WriteLine("Соединение с сервером установлено!");
+
+            var secCode = "SiM0";
+
+            Console.WriteLine("Определяем код класса инструмента " + secCode + ", по списку классов...");
+
+            var classCode = quik.Class.GetSecurityClass("SPBFUT", secCode).Result;
+
+            if (string.IsNullOrEmpty(classCode))
+            {
+                Console.WriteLine("Ошибка! Ошибка получения данных по классу");
+                return;
+            }
+
+            Console.WriteLine("Определяем код клиента...");
+
+            var qwe = quik.Trading.GetOptionBoard("SPBFUT", "Si");
+
+            var clientCode = quik.Class.GetClientCode().Result;
+
+            Console.WriteLine("Создаем экземпляр инструмента " + secCode + " " + classCode + "...");
+
+            var tool = new Tool(quik, secCode, classCode);
+
+            if (tool == null || string.IsNullOrEmpty(tool.Name))
+            {
+                Console.WriteLine("Ошибка! Ошибка получения данных по инструменту");
+                return;
+            }
+            else
+            {
+                Console.WriteLine("Подписываемся на получение исторических данных...");
+                quik.Candles.Subscribe(tool.ClassCode, tool.SecurityCode, CandleInterval.M15).Wait();
+
+                Console.WriteLine("Проверяем состояние подписки...");
+                var isSubscribedToolCandles = quik.Candles.IsSubscribed(tool.ClassCode, tool.SecurityCode, CandleInterval.M15).Result;
+
+                if (!isSubscribedToolCandles)
+                {
+                    Console.WriteLine("Неудачная попытка подписки на исторические данные.");
+                    return;
+                }
+
+                Console.WriteLine("Получаем исторические данные...");
+
+                // Получаем данные всех доступных свечей
+                var toolCandles = quik.Candles.GetAllCandles(tool.ClassCode, tool.SecurityCode, CandleInterval.M15).Result;
+
+                //// Пишем данные в файл на рабочий стол в файл формата CSV
+                using (var sw = new StreamWriter("D:\\Desktop\\test-siu0.csv", false))
+                {
+                    //    // Добавляем заголовок CSV файла
+                    sw.WriteLine("DateTime;Open;Close;High;Low;Volume");
+
+                    foreach (var candle in toolCandles) // Перебираем все свечи и построчно пишем в файл
+                    {
+                        //        // Пребразуем объект даты и времени Квика в строку
+                        var dt = candle.Datetime;
+                        var dateTime = $"{dt.day}.{dt.month}.{dt.year} {dt.hour}:{dt.min}";
+
+                        //        // Пишем в строку файла данные одной свечи
+                        sw.WriteLine($"{dateTime};{candle.Open};{candle.Close};{candle.High};{candle.Low};{candle.Volume}");
+                    }
+                }
+
+                CRR(tool);
+            }
+        }
+
+        public static void CRR(Tool tool)
+        {
+            const int years = 1;
+            const int steps = 20;
+            const double deltaT = (double)years / (double)steps;
+            const double volatility = 43.073;
+            double u = Math.Exp(volatility * Math.Sqrt(deltaT));
+
+            double s0 = (double)tool.LastPrice;
+            const double strike = 78750;
+            const double sureTx = 78936;
+
+            double d = 1 / u;
+            double p = (Math.Exp(sureTx * deltaT) - d) / (u - d);
+
+            var node = new BinomialTreeNode(s0, u, d, p, 0, steps);
+
+            var result = node.Evaluate((s) => Math.Max(s - strike, 0));
+
+            System.Console.Write(result);
+        }
+    }
+}
