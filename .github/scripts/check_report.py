@@ -1,78 +1,111 @@
 import os
 import sys
 import json
-import requests
 import glob
+import requests
+import time
 
-# Настройки (берутся из GitHub Secrets)
-API_KEY = os.environ.get("LLM_API_KEY")
-API_URL = os.environ.get("LLM_API_URL", "https://api.openai.com/v1/chat/completions") # Замените на URL YandexGPT/GigaChat при необходимости
-MODEL_NAME = os.environ.get("LLM_MODEL", "gpt-4o-mini") # Или "yandexgpt", "llama-3-70b" и т.д.
+def save_result(text):
+    with open("review.md", "w", encoding="utf-8") as f:
+        f.write(text)
 
-def get_student_report():
-    """Ищет файл отчета в PR"""
-    # Ищем .md или .ipynb в папке students/ или в корне
-    files = glob.glob("**/*report*.md", recursive=True) + \
-            glob.glob("**/*.ipynb", recursive=True)
-    
-    # Исключаем системные файлы
-    files = [f for f in files if not f.startswith('.github')]
+def main():
+    # Ищем именно HF_API_TOKEN
+    token = os.environ.get("HF_API_TOKEN")
+    if not token:
+        save_result("### ❌ Ошибка настройки\n\nСекрет `HF_API_TOKEN` не найден в Settings > Secrets > Actions.\n\nУбедитесь, что вы создали его с именем HF_API_TOKEN и значением, начинающимся на `hf_`.")
+        sys.exit(1)
+
+    files = glob.glob("**/*report*.md", recursive=True) + glob.glob("**/*.ipynb", recursive=True)
+    files = [f for f in files if ".github" not in f and "review.md" not in f]
     
     if not files:
-        return "Отчет не найден. Студент не прикрепил файл report.md или .ipynb"
-    
+        save_result("### ❌ Отчёт не найден\n\nДобавьте файл `report.md` или `.ipynb` в этот Pull Request.")
+        sys.exit(1)
+
     report_file = files[0]
-    print(f"Найден файл отчета: {report_file}")
+    print(f"✅ Найден файл отчёта: {report_file}")
     
-    with open(report_file, 'r', encoding='utf-8') as f:
-        if report_file.endswith('.ipynb'):
-            # Простая экстракция текста из ячеек markdown в notebook
-            import re
-            notebook = json.load(f)
-            text = ""
-            for cell in notebook.get('cells', []):
-                if cell.get('cell_type') == 'markdown':
-                    text += "".join(cell.get('source', [])) + "\n"
-            return text[:4000] # Ограничиваем размер контекста
-        else:
-            return f.read()[:4000]
+    with open(report_file, "r", encoding="utf-8") as f:
+        report_text = f.read()[:3000]
 
-def check_with_ai(report_text):
-    """Отправляет отчет в LLM для проверки"""
-    with open('.github/ai_agent_prompt.txt', 'r', encoding='utf-8') as f:
-        system_prompt = f.read()
+    prompt = f"""Ты — строгий ассистент преподавателя курса "Генеративный ИИ и МО" (ЮФУ, каф. САПР им. В.М. Курейчика).
+Проверь отчёт студента по критериям ФОС:
 
+1. СТРУКТУРА: есть ли разделы "Цель", "Ход выполнения", "Результаты", "Выводы"
+2. КОМПЕТЕНЦИИ: указаны ли индикаторы (ПК-7.1, ПК-8.2, ПК-9.2, ПК-14.1, ПК-24.1 и т.д.)
+3. КОД: есть ли Python-код и упоминание библиотек (Pandas, PyTorch, Plotly и др.)
+4. РЕЗУЛЬТАТЫ: есть ли метрики (accuracy, loss) или упоминание графиков
+
+Шкала: 5 - без ошибок, 4 - небольшие ошибки, 3 - неполно, <3 - менее 50%
+
+ОТВЕТЬ СТРОГО в формате Markdown:
+
+### 🤖 Оценка ИИ-ассистента
+**Предварительная оценка:** [X]/5 баллов
+**Статус:** ✅ Принято / ⚠️ Доработка / ❌ Не соответствует
+
+#### 📊 Разбор по ФОС:
+- **Структура:** [комментарий]
+- **Компетенции:** [указаны ли ПК? Какие добавить?]
+- **Код и результаты:** [есть ли анализ?]
+
+#### 💡 Рекомендации:
+1. [совет 1]
+2. [совет 2]
+
+*Автопроверка. Окончательный балл ставит преподаватель.*
+
+ОТЧЁТ СТУДЕНТА:
+{report_text}
+"""
+
+    url = "https://api-inference.huggingface.co/models/Qwen/Qwen2.5-7B-Instruct"
     headers = {
-        "Authorization": f"Bearer {API_KEY}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-    
-    # Формат запроса совместим с OpenAI / YandexGPT / GigaChat
     payload = {
-        "model": MODEL_NAME,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Текст отчета студента:\n\n{report_text}"}
-        ],
-        "temperature": 0.3 # Низкая температура для строгой оценки
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": 800,
+            "temperature": 0.2,
+            "return_full_text": False
+        }
     }
 
-    response = requests.post(API_URL, headers=headers, json=payload)
+    print("🧠 Отправка запроса в Hugging Face...")
     
-    if response.status_code == 200:
-        return response.json()["choices"][0]["message"]["content"]
-    else:
-        return f"❌ Ошибка ИИ-агента: {response.status_code}\n{response.text}"
+    for attempt in range(3):
+        print(f"Попытка {attempt + 1}/3...")
+        try:
+            r = requests.post(url, headers=headers, json=payload, timeout=120)
+            print(f"Статус ответа: {r.status_code}")
+            
+            if r.status_code == 200:
+                result = r.json()
+                if isinstance(result, list) and len(result) > 0:
+                    ai_review = result[0].get("generated_text", "")
+                    if ai_review:
+                        save_result(ai_review)
+                        print("✅ Результат сохранён в review.md")
+                        return
+                print(f"Неожиданный формат ответа: {str(result)[:200]}")
+            
+            elif r.status_code == 503:
+                print("⏳ Модель загружается, ждём 30 сек...")
+                time.sleep(30)
+                continue
+            else:
+                print(f"❌ Ошибка API: {r.status_code}")
+                print(r.text[:500])
+                break
+        except Exception as e:
+            print(f"❌ Исключение при запросе: {e}")
+            break
+
+    save_result("### ⚠️ ИИ-агент временно недоступен\n\nМодель Hugging Face не ответила (возможно, 'просыпается' или превышен лимит).\n\n**Решение:** нажмите **Re-run jobs** во вкладке Actions через 2-3 минуты.")
+    sys.exit(1)
 
 if __name__ == "__main__":
-    if not API_KEY:
-        print("Ошибка: Не задан LLM_API_KEY в GitHub Secrets")
-        sys.exit(1)
-        
-    report = get_student_report()
-    ai_review = check_with_ai(report)
-    
-    # Сохраняем результат в файл, чтобы GitHub Action мог его прочитать и оставить как комментарий
-    with open("ai_review_output.md", "w", encoding="utf-8") as f:
-        f.write(ai_review)
-    print("✅ Проверка завершена, результат сохранен в ai_review_output.md")
+    main()
