@@ -10,20 +10,21 @@ def save_result(text):
         f.write(text)
 
 def main():
+    # Ищем именно HF_API_TOKEN
     token = os.environ.get("HF_API_TOKEN")
     if not token:
-        save_result("### ❌ Ошибка настройки\n\nСекрет `HF_API_TOKEN` не найден в Settings > Secrets.")
+        save_result("### ❌ Ошибка настройки\n\nСекрет `HF_API_TOKEN` не найден в Settings > Secrets > Actions.\n\nУбедитесь, что вы создали его с именем HF_API_TOKEN и значением, начинающимся на `hf_`.")
         sys.exit(1)
 
     files = glob.glob("**/*report*.md", recursive=True) + glob.glob("**/*.ipynb", recursive=True)
     files = [f for f in files if ".github" not in f and "review.md" not in f]
     
     if not files:
-        save_result("### ❌ Отчёт не найден\n\nДобавьте файл `report.md` или `.ipynb` в Pull Request.")
+        save_result("### ❌ Отчёт не найден\n\nДобавьте файл `report.md` или `.ipynb` в этот Pull Request.")
         sys.exit(1)
 
     report_file = files[0]
-    print(f"✅ Найден отчёт: {report_file}")
+    print(f"✅ Найден файл отчёта: {report_file}")
     
     with open(report_file, "r", encoding="utf-8") as f:
         report_text = f.read()[:3000]
@@ -100,18 +101,10 @@ def main():
                 print(r.text[:500])
                 break
         except Exception as e:
-            print(f"❌ Исключение: {e}")
+            print(f"❌ Исключение при запросе: {e}")
             break
 
-    error_msg = """### ⚠️ ИИ-агент временно недоступен
-
-Модель Hugging Face не ответила. Возможные причины:
-- Модель "просыпается" (первый запуск)
-- Превышен лимит бесплатных запросов
-
-**Решение:** нажмите **Re-run jobs** во вкладке Actions через 2-3 минуты."""
-    save_result(error_msg)
-    print("⚠️ Использован fallback-ответ")
+    save_result("### ⚠️ ИИ-агент временно недоступен\n\nМодель Hugging Face не ответила (возможно, 'просыпается' или превышен лимит).\n\n**Решение:** нажмите **Re-run jobs** во вкладке Actions через 2-3 минуты.")
     sys.exit(1)
 
 if __name__ == "__main__":
