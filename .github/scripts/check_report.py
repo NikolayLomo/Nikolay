@@ -10,10 +10,10 @@ def save_result(text):
         f.write(text)
 
 def main():
-    # Ищем именно HF_API_TOKEN
+    # Ищем именно HF_API_TOKEN (Hugging Face)
     token = os.environ.get("HF_API_TOKEN")
     if not token:
-        save_result("### ❌ Ошибка настройки\n\nСекрет `HF_API_TOKEN` не найден в Settings > Secrets > Actions.\n\nУбедитесь, что вы создали его с именем HF_API_TOKEN и значением, начинающимся на `hf_`.")
+        save_result("### ❌ Ошибка настройки\n\nСекрет `HF_API_TOKEN` не найден в Settings > Secrets > Actions.\n\nПожалуйста, добавьте его с именем HF_API_TOKEN и значением, начинающимся на `hf_`.")
         sys.exit(1)
 
     files = glob.glob("**/*report*.md", recursive=True) + glob.glob("**/*.ipynb", recursive=True)
