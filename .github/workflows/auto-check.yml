@@ -2,7 +2,7 @@ name: AI Agent Check
 
 on:
   pull_request:
-    branches: [main, master]
+    branches: [master, main]
 
 jobs:
   check:
@@ -19,55 +19,12 @@ jobs:
 
       - run: pip install requests
 
-      - name: 🔍 Диагностика структуры
-        run: |
-          echo "=== Структура репозитория ==="
-          ls -la
-          echo ""
-          echo "=== Содержимое .github ==="
-          ls -la .github/ || echo "Папка .github не найдена"
-          echo ""
-          echo "=== Содержимое .github/scripts ==="
-          ls -la .github/scripts/ || echo "Папка .github/scripts не найдена"
-          echo ""
-          echo "=== Содержимое .github/workflows ==="
-          ls -la .github/workflows/ || echo "Папка .github/workflows не найдена"
-          echo ""
-          echo "=== Проверка токена ==="
-          if [ -n "$HF_API_TOKEN" ]; then
-            echo "✅ HF_API_TOKEN задан (длина: ${#HF_API_TOKEN} символов)"
-          else
-            echo "❌ HF_API_TOKEN НЕ задан!"
-          fi
+      - name: Run AI check
         env:
           HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+        run: python .github/scripts/check_report.py
 
-      - name: 🧠 Запуск ИИ-агента
-        env:
-          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
-        run: |
-          echo "=== Запуск скрипта ==="
-          python .github/scripts/check_report.py 2>&1 || {
-            echo "❌ Скрипт упал с кодом $?"
-            echo "=== Создаём fallback-отзыв ==="
-            cat > review.md << 'FALLBACK'
-          ### ⚠️ Ошибка при проверке отчёта
-
-          Скрипт проверки завершился с ошибкой. Возможные причины:
-          - Файл `check_report.py` не найден по пути `.github/scripts/`
-          - Не установлен модуль `requests`
-          - Проблема с токеном Hugging Face
-
-          **Что делать:**
-          1. Проверьте, что файл `.github/scripts/check_report.py` существует
-          2. Убедитесь, что в Settings → Secrets → Actions есть секрет `HF_API_TOKEN`
-          3. Обратитесь к преподавателю с этим сообщением
-          FALLBACK
-          }
-          echo "=== Содержимое review.md ==="
-          cat review.md || echo "review.md не создан"
-
-      - name: 💬 Публикация комментария
+      - name: Post comment
         if: always()
         uses: peter-evans/create-or-update-comment@v4
         with:
