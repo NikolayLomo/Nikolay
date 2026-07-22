@@ -1,4 +1,4 @@
-name: AI Agent Check
+name: AI Agent Check (DIAGNOSTIC)
 
 on:
   pull_request:
@@ -13,18 +13,53 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+      - name: 🔍 ДИАГНОСТИКА: Структура файлов
+        run: |
+          echo "=== Корень репозитория ==="
+          ls -la
+          echo ""
+          echo "=== Папка .github ==="
+          ls -la .github/ || echo "❌ Папка .github НЕ НАЙДЕНА"
+          echo ""
+          echo "=== Папка .github/scripts ==="
+          ls -la .github/scripts/ || echo "❌ Папка .github/scripts НЕ НАЙДЕНА"
+          echo ""
+          echo "=== Папка .github/workflows ==="
+          ls -la .github/workflows/ || echo "❌ Папка .github/workflows НЕ НАЙДЕНА"
 
-      - run: pip install requests
-
-      - name: Run AI check
+      - name: 🔍 ДИАГНОСТИКА: Проверка секрета
+        run: |
+          if [ -z "$HF_API_TOKEN" ]; then
+            echo "❌ КРИТИЧЕСКАЯ ОШИБКА: HF_API_TOKEN ПУСТОЙ или ОТСУТСТВУЕТ!"
+          else
+            echo "✅ Секрет HF_API_TOKEN найден (длина: ${#HF_API_TOKEN} символов)"
+          fi
         env:
           HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
-        run: python .github/scripts/check_report.py
 
-      - name: Post comment
+      - name: 🧪 ДИАГНОСТИКА: Минимальный тест Python
+        run: |
+          echo "Запускаем тестовый Python-скрипт..."
+          python3 << 'EOF'
+          import os
+          
+          token = os.environ.get("HF_API_TOKEN", "NOT_FOUND")
+          if token == "NOT_FOUND":
+              print("❌ Внутри Python токен НЕ виден!")
+          else:
+              print(f"✅ Внутри Python токен виден (начинается с: {token[:5]}...)")
+          
+          # Гарантированно создаем файл для комментария
+          with open("review.md", "w", encoding="utf-8") as f:
+              f.write("### ✅ Диагностический тест пройден!\n\n")
+              f.write("Скрипт успешно запустился и создал этот файл.\n\n")
+              f.write(f"Токен Hugging Face виден скрипту: **{'Да' if token != 'NOT_FOUND' else 'Нет'}**\n\n")
+              f.write("---\n*Если вы видите это сообщение, значит путь к файлу и секреты настроены верно. Следующий шаг — вернуть полноценный код проверки.*")
+          
+          print("✅ Файл review.md успешно создан")
+          EOF
+
+      - name: 💬 Публикация результата в PR
         if: always()
         uses: peter-evans/create-or-update-comment@v4
         with:
