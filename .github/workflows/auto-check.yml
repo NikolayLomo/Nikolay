@@ -1,38 +1,56 @@
 name: AI Agent Check
 
+# ВАЖНО: pull_request_target дает доступ к секретам базового репозитория при PR из форка
 on:
-  pull_request:
-    branches:
-      - master
-      - main
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write # Разрешение на создание комментариев
 
 jobs:
-  check:
+  ai-check:
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-      contents: read
     steps:
-      - name: Checkout repository
+      - name: Checkout student code safely
         uses: actions/checkout@v4
+        with:
+          # Чекаутим именно коммит студента, а не ваш main
+          ref: ${{ github.event.pull_request.head.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: '3.10'
 
-      - name: Install dependencies
-        run: pip install requests
-
-      - name: Run check script
-        run: python .github/scripts/check_report.py
+      - name: Run AI Check Script
+        id: ai_run
         env:
-          # Передаем секрет в переменную окружения для скрипта
+          # Жестко привязываем секрет из настроек репозитория к переменной окружения
           HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+        run: |
+          echo "Запуск проверки..."
+          python .github/scripts/check_report.py
+          
+          # Сохраняем содержимое отчета в переменную GitHub для следующего шага
+          if [ -f review.md ]; then
+            echo "REPORT_CONTENT<<EOF" >> $GITHUB_OUTPUT
+            cat review.md >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "REPORT_CONTENT=Файл review.md не был создан скриптом." >> $GITHUB_OUTPUT
+          fi
 
-      - name: Post comment
-        if: always()
+      - name: Post Report to PR
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
-          body-path: review.md
+          body: |
+            ### 🤖 Отчет ИИ-агента
+            
+            ${{ steps.ai_run.outputs.REPORT_CONTENT }}
+            
+            ---
+            *Статус проверки: ${{ job.status }}*
