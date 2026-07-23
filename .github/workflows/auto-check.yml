@@ -13,18 +13,22 @@ jobs:
       pull-requests: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      - run: pip install requests
+      - name: Install dependencies
+        run: pip install requests
 
-      - name: Run AI check
-        env:
-          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+      - name: Run check script
         run: python .github/scripts/check_report.py
+        env:
+          # Передаем секрет в переменную окружения для скрипта
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
 
       - name: Post comment
         if: always()
