@@ -81,12 +81,15 @@ def main():
                     ans = result[0].get("generated_text", "")
                     if ans:
                         save(ans)
-                        print("✅ Готово!")
+                        print("✅ Ответ получен и сохранён!")
                         return
                 print(f"Неожиданный ответ: {str(result)[:200]}")
+                # Если ответ пришел, но в неожиданном формате, сохраним его как есть
+                save(str(result))
+                return
             
             elif r.status_code == 503:
-                print("⏳ Модель загружается, ждём...")
+                print("⏳ Модель загружается, ждём 30 сек...")
                 time.sleep(30)
             else:
                 print(f"❌ Ошибка: {r.text[:500]}")
@@ -99,3 +102,14 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
+    # === ШАГ 6: ГАРАНТИРОВАННЫЙ ВЫВОД В ЛОГИ ===
+    print("\n" + "="*60)
+    print("🤖 ПОЛНЫЙ ОТВЕТ ИИ-АГЕНТА (содержимое review.md):")
+    print("="*60)
+    try:
+        with open("review.md", "r", encoding="utf-8") as f:
+            print(f.read())
+    except Exception as e:
+        print(f"Не удалось прочитать review.md: {e}")
+    print("="*60 + "\n")
